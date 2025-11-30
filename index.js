@@ -1,7 +1,4 @@
-// =========================
-// ALDOS PZZERIA – CLOUDPRNT SERVER (FINAL VERSION)
-// =========================
-
+// index.js
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -9,92 +6,78 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ====== MIDDLEWARES ======
 app.use(cors());
 app.use(bodyParser.json());
 
-// Aquí guardamos el último ticket enviado desde el kiosco
+// Aquí guardamos el último ticket que mandó el kiosco
 let lastTicket = null;
 
-// ========================
-// Ruta de verificación
-// ========================
+// ====== RUTA DE PRUEBA (HEALTHCHECK) ======
 app.get("/", (req, res) => {
-  res.send("✅ Aldos Pizzeria CloudPRNT server is running.");
+  res.send("✅ Aldos kiosco server is running.");
 });
 
-// ========================
-// El kiosco envía el ticket
-// ========================
+// ====== ENDPOINT DONDE EL KIOSCO MANDA EL TICKET ======
 app.post("/submit", (req, res) => {
   const { ticket } = req.body || {};
 
-  if (!ticket) {
+  if (!ticket || typeof ticket !== "string") {
+    console.log("❌ /submit llamado con body inválido:", req.body);
     return res.status(400).json({ error: "Missing ticket text" });
   }
 
-  console.log("🧾 Nuevo ticket recibido:");
+  lastTicket = ticket;
+  console.log("🧾 New ticket received from kiosk:");
   console.log(ticket);
 
-  lastTicket = ticket;
   res.json({ ok: true, message: "Ticket stored successfully." });
 });
 
-// ===============================
-// CLOUDPRNT ENDPOINTS Reales
-// ===============================
-
-// 1️⃣ La impresora pregunta si hay trabajo pendiente
+// ====== CLOUDPRNT: STATUS ======
+// La impresora llama aquí cada 15s para preguntar si hay trabajo
 app.get("/cloudprnt/status", (req, res) => {
-  console.log("📡 Printer requested /cloudprnt/status");
+  const ready = !!lastTicket;
+  console.log("📡 Printer called /cloudprnt/status – jobReady =", ready);
 
-  if (!lastTicket) {
-    return res.json({
-      jobReady: false,
-      mediaTypes: ["application/vnd.star.starprnt"]
-    });
-  }
-
-  res.json({
-    jobReady: true,
-    mediaTypes: ["application/vnd.star.starprnt"]
+  return res.json({
+    jobReady: ready,        // true si hay ticket, false si no
+    mediaTypes: ["escpos"], // tipo de trabajo que enviamos
+    deleteJob: true         // que borre el job cuando lo tome
   });
 });
 
-// 2️⃣ La impresora pide el trabajo real
+// ====== CLOUDPRNT: JOB ======
+// Cuando jobReady = true, la impresora llama aquí para pedir el ticket
 app.get("/cloudprnt/job", (req, res) => {
-  console.log("📡 Printer requested /cloudprnt/job");
-
   if (!lastTicket) {
+    console.log("📄 Printer called /cloudprnt/job but there is no ticket.");
     return res.json({ jobReady: false });
   }
 
   const ticketText = lastTicket;
+  console.log("🖨️ Printer called /cloudprnt/job – sending ticket.");
+  // limpiamos el ticket para que solo se imprima una vez
+  lastTicket = null;
 
-  // Convertimos a ESC/POS + corte de papel
+  // Construimos texto ESC/POS
   const escpos =
     ticketText +
     "\n-----------------------------\n" +
-    "Gracias por su orden!\n" +
-    "\x1B\x64\x02"; // Corte de papel
+    "Thank you!\n" +
+    "\x1B\x64\x03"; // cortar papel
 
-  const job = {
+  // Lo convertimos a Base64 como pide CloudPRNT
+  res.json({
     jobReady: true,
     job: {
-      size: escpos.length,
       type: "escpos",
-      data: Buffer.from(escpos).toString("base64")
+      data: Buffer.from(escpos, "utf8").toString("base64")
     }
-  };
-
-  // Limpiar después de entregar el trabajo
-  lastTicket = null;
-
-  res.json(job);
+  });
 });
 
-// ===============================
-// Servidor arrancando
-// ===============================
+// ====== INICIAR SERVIDOR ======
 app.listen(PORT, () => {
-  console.log(`🚀 CloudPRNT server listening on port ${PORT}`);
+  console.log(`🚀 Aldos kiosco server listening on port ${PORT}`);
 });
