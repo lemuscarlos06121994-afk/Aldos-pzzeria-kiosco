@@ -5,19 +5,18 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares
 app.use(cors());
 app.use(bodyParser.json());
 
-// Aquí guardaremos el último ticket que mande el kiosco
+// almacenamiento temporal del ticket
 let lastTicket = null;
 
-// Ruta de prueba para ver que el servidor está vivo
+// Home
 app.get("/", (req, res) => {
   res.send("✅ Aldos kiosco server is running.");
 });
 
-// Endpoint donde el kiosco manda el ticket de cocina
+// KIOSKO ENVÍA TICKET AQUÍ
 app.post("/submit", (req, res) => {
   const { ticket } = req.body || {};
 
@@ -26,16 +25,54 @@ app.post("/submit", (req, res) => {
   }
 
   lastTicket = ticket;
-  console.log("🧾 New ticket received from kiosk:");
+
+  console.log("🧾 Ticket received from kiosk:");
   console.log(ticket);
 
-  res.json({ ok: true, message: "Ticket stored, printer can fetch it." });
+  res.json({ ok: true, message: "Ticket stored, printer will fetch it." });
 });
 
-// (Más adelante aquí podemos agregar /cloudprnt para la impresora)
-// app.get("/cloudprnt", ...);
+// ===============================
+//   CLOUDPRNT STATUS ENDPOINT
+// ===============================
+app.get("/cloudprnt/status", (req, res) => {
+  if (!lastTicket) {
+    return res.json({
+      jobReady: false,
+      message: "No job in queue."
+    });
+  }
 
-// Iniciar servidor
+  res.json({
+    jobReady: true,
+    message: "Job waiting."
+  });
+});
+
+// ===============================
+//   CLOUDPRNT JOB ENDPOINT
+// ===============================
+app.get("/cloudprnt/job", (req, res) => {
+  if (!lastTicket) {
+    return res.json({ jobReady: false });
+  }
+
+  // convertir el ticket a Base64 (formato requerido)
+  const job = {
+    jobReady: true,
+    job: {
+      type: "text",
+      data: Buffer.from(lastTicket).toString("base64")
+    }
+  };
+
+  // limpiar cola
+  lastTicket = null;
+
+  res.json(job);
+});
+
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Aldos kiosco server listening on port ${PORT}`);
 });
