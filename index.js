@@ -1,5 +1,3 @@
-// index.js  — Aldos Pzzeria Kiosco (CloudPRNT server)
-
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -7,19 +5,19 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ====== MIDDLEWARES ======
+// Middlewares
 app.use(cors());
 app.use(bodyParser.json());
 
-// Aquí guardamos el último ticket que mandó el kiosco
+// Aquí guardaremos el último ticket que mande el kiosco
 let lastTicket = null;
 
-// ====== RUTA PRINCIPAL (para probar que el server vive) ======
+// Ruta de prueba para ver que el servidor está vivo
 app.get("/", (req, res) => {
   res.send("✅ Aldos kiosco server is running.");
 });
 
-// ====== ENDPOINT DONDE EL KIOSCO ENVÍA EL TICKET ======
+// Endpoint donde el kiosco manda el ticket de cocina
 app.post("/submit", (req, res) => {
   const { ticket } = req.body || {};
 
@@ -28,18 +26,17 @@ app.post("/submit", (req, res) => {
   }
 
   lastTicket = ticket;
-  console.log("🧾 New ticket received from kiosk:\n");
+  console.log("🧾 New ticket received from kiosk:");
   console.log(ticket);
 
   res.json({ ok: true, message: "Ticket stored, printer can fetch it." });
 });
 
-// ====== ENDPOINT CLOUDPRNT PARA LA IMPRESORA ======
-// La impresora Star mC-Print3 hará peticiones GET a esta ruta.
-// URL para poner en la impresora:
-//   https://aldos-pzzeria-kiosco.onrender.com/cloudprnt
-app.get("/cloudprnt", (req, res) => {
-  // Si no hay ticket pendiente, avisamos que no hay trabajo
+
+// ================= CLOUDPRNT ENDPOINTS (Star mC-Print3) =================
+
+// 1) La impresora pregunta si hay trabajo
+app.get("/cloudprnt/status", (req, res) => {
   if (!lastTicket) {
     return res.json({
       jobReady: false,
@@ -47,36 +44,42 @@ app.get("/cloudprnt", (req, res) => {
     });
   }
 
-  const ESC = "\x1B";
-  const GS = "\x1D";
-
-  // Construimos un texto ESC/POS simple
-  const escpos =
-    ESC + "@"+                           // reset
-    ESC + "!" + "\x38" +                 // doble ancho + doble alto (negrita)
-    "ALDO'S PIZZERIA\n" +
-    ESC + "!" + "\x00" +                 // fuente normal
-    "------------------------------\n" +
-    lastTicket + "\n" +
-    "------------------------------\n" +
-    "Thank you!\n" +
-    ESC + "d" + "\x03" +                 // feed 3 líneas
-    GS + "V" + "\x00";                   // cortar papel
-
-  // limpiamos el ticket para que no se repita
-  lastTicket = null;
-
-  // Respondemos en formato CloudPRNT
   res.json({
+    jobReady: true,
+    message: "Job waiting."
+  });
+});
+
+// 2) La impresora pide el ticket (ESC/POS)
+app.get("/cloudprnt/job", (req, res) => {
+  if (!lastTicket) {
+    return res.json({ jobReady: false });
+  }
+
+  const ticketText = lastTicket;
+
+  // Convertimos el ticket en Base64 ESC/POS
+  const escpos =
+    ticketText +
+    "\n-----------------------------\n" +
+    "Thank you!\n" +
+    "\x1B\x64\x03"; // cortar papel
+
+  const job = {
     jobReady: true,
     job: {
       type: "escpos",
       data: Buffer.from(escpos).toString("base64")
     }
-  });
+  };
+
+  // Limpia el ticket después de entregarlo
+  lastTicket = null;
+
+  res.json(job);
 });
 
-// ====== INICIAR SERVIDOR ======
+// Iniciar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Aldos kiosco server listening on port ${PORT}`);
 });
