@@ -5,19 +5,18 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares
 app.use(cors());
 app.use(bodyParser.json());
 
-// Aquí guardaremos el último ticket que mande el kiosco
+// Aquí guardaremos el ticket enviado desde el kiosco
 let lastTicket = null;
 
-// Ruta de prueba
+// PRUEBA: ver si el servidor está vivo
 app.get("/", (req, res) => {
   res.send("✅ Aldos kiosco server is running.");
 });
 
-// Endpoint donde el kiosco manda el ticket
+// El kiosco manda el ticket aquí
 app.post("/submit", (req, res) => {
   const { ticket } = req.body || {};
 
@@ -33,7 +32,7 @@ app.post("/submit", (req, res) => {
 });
 
 
-// ================= CLOUDPRNT ENDPOINTS (Star mC-Print3) =================
+// ================= CLOUDPRNT ENDPOINTS =================
 
 // 1) La impresora pregunta si hay trabajo
 app.get("/cloudprnt/status", (req, res) => {
@@ -58,7 +57,7 @@ app.get("/cloudprnt/job", (req, res) => {
 
   const ticketText = lastTicket;
 
-  // Convertimos el ticket en Base64 ESC/POS
+  // Convertimos el ticket a ESC/POS + Base64
   const escpos =
     ticketText +
     "\n-----------------------------\n" +
