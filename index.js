@@ -32,11 +32,12 @@ app.post("/submit", (req, res) => {
   res.json({ ok: true, message: "Ticket stored, printer can fetch it." });
 });
 
-
 // ================= CLOUDPRNT ENDPOINTS (Star mC-Print3) =================
 
 // 1) La impresora pregunta si hay trabajo
 app.get("/cloudprnt/status", (req, res) => {
+  console.log("📡 Printer called /cloudprnt/status");
+
   if (!lastTicket) {
     return res.json({
       jobReady: false,
@@ -52,6 +53,8 @@ app.get("/cloudprnt/status", (req, res) => {
 
 // 2) La impresora pide el ticket (ESC/POS)
 app.get("/cloudprnt/job", (req, res) => {
+  console.log("📡 Printer called /cloudprnt/job");
+
   if (!lastTicket) {
     return res.json({ jobReady: false });
   }
@@ -75,6 +78,7 @@ app.get("/cloudprnt/job", (req, res) => {
 
   // Limpia el ticket después de entregarlo
   lastTicket = null;
+  console.log("✅ Ticket sent to printer (cloudprnt/job).");
 
   res.json(job);
 });
