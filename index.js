@@ -5,18 +5,19 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middlewares
 app.use(cors());
 app.use(bodyParser.json());
 
-// almacenamiento temporal del ticket
+// Aquí guardaremos el último ticket que mande el kiosco
 let lastTicket = null;
 
-// Home
+// Ruta de prueba
 app.get("/", (req, res) => {
   res.send("✅ Aldos kiosco server is running.");
 });
 
-// KIOSKO ENVÍA TICKET AQUÍ
+// Endpoint donde el kiosco manda el ticket
 app.post("/submit", (req, res) => {
   const { ticket } = req.body || {};
 
@@ -25,21 +26,21 @@ app.post("/submit", (req, res) => {
   }
 
   lastTicket = ticket;
-
-  console.log("🧾 Ticket received from kiosk:");
+  console.log("🧾 New ticket received from kiosk:");
   console.log(ticket);
 
-  res.json({ ok: true, message: "Ticket stored, printer will fetch it." });
+  res.json({ ok: true, message: "Ticket stored, printer can fetch it." });
 });
 
-// ===============================
-//   CLOUDPRNT STATUS ENDPOINT
-// ===============================
+
+// ================= CLOUDPRNT ENDPOINTS (Star mC-Print3) =================
+
+// 1) La impresora pregunta si hay trabajo
 app.get("/cloudprnt/status", (req, res) => {
   if (!lastTicket) {
     return res.json({
       jobReady: false,
-      message: "No job in queue."
+      message: "No jobs in queue."
     });
   }
 
@@ -49,30 +50,37 @@ app.get("/cloudprnt/status", (req, res) => {
   });
 });
 
-// ===============================
-//   CLOUDPRNT JOB ENDPOINT
-// ===============================
+// 2) La impresora pide el ticket (ESC/POS)
 app.get("/cloudprnt/job", (req, res) => {
   if (!lastTicket) {
     return res.json({ jobReady: false });
   }
 
-  // convertir el ticket a Base64 (formato requerido)
+  const ticketText = lastTicket;
+
+  // Convertimos el ticket en Base64 ESC/POS
+  const escpos =
+    ticketText +
+    "\n-----------------------------\n" +
+    "Thank you!\n" +
+    "\x1B\x64\x03"; // cortar papel
+
   const job = {
     jobReady: true,
     job: {
-      type: "text",
-      data: Buffer.from(lastTicket).toString("base64")
+      type: "escpos",
+      data: Buffer.from(escpos).toString("base64")
     }
   };
 
-  // limpiar cola
+  // Limpia el ticket después de entregarlo
   lastTicket = null;
 
   res.json(job);
 });
 
-// Start server
+
+// Iniciar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Aldos kiosco server listening on port ${PORT}`);
 });
