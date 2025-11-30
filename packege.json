@@ -1,6 +1,7 @@
 {
   "name": "aldos-kiosco-server",
   "version": "1.0.0",
+  "description": "Simple backend for Aldo's kiosco printing",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
