@@ -1,85 +1,121 @@
+// index.js - Aldos kiosco + Star CloudPRNT (mC-Print3)
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Render suele usarse con 10000; pero respeta process.env.PORT
 
+// ====== MIDDLEWARES ======
 app.use(cors());
 app.use(bodyParser.json());
 
-// Guarda el ticket más reciente
+// Último ticket recibido desde el kiosco
 let lastTicket = null;
 
-// Comprobación básica
+// ====== RUTA RAÍZ ======
 app.get("/", (req, res) => {
-  res.send("✅ CloudPRNT server is running.");
+  res.send("✅ Aldos kiosco CloudPRNT server is running.");
 });
 
-// El kiosco envía el ticket aquí
+// ====== ENDPOINT /submit (lo llama tu app de menú / kiosco) ======
 app.post("/submit", (req, res) => {
   const { ticket } = req.body || {};
 
-  if (!ticket) {
-    return res.status(400).json({ error: "Missing ticket" });
+  if (!ticket || typeof ticket !== "string") {
+    return res.status(400).json({ ok: false, error: "Missing ticket text" });
   }
 
   lastTicket = ticket;
-  console.log("🧾 New ticket received:", ticket);
 
-  res.json({
+  console.log("🧾 New ticket received from kiosk:");
+  console.log(ticket);
+
+  return res.json({
     ok: true,
     message: "Ticket stored successfully."
   });
 });
 
-/* ===========================================================
-   STAR CLOUDPRNT REQUIRED ENDPOINTS (Case-sensitive)
-   =========================================================== */
+// ====== CLOUDPRNT ENDPOINTS PARA LA mC-PRINT3 ======
+//
+// IMPORTANTE:
+// En la impresora pusiste:
+//   Server URL: https://aldos-pzzeria-kiosco.onrender.com/cloudprnt
+//
+// Star va a llamar:
+//   GET /cloudprnt          -> status y capabilities
+//   POST /cloudprnt         -> job data / ACK (dependiendo del modelo)
+//
+// Para simplificar: respondemos siempre con el mismo JSON.
 
-// 1️⃣ Printer checks if a job is available
-app.get("/CloudPRNT", (req, res) => {
+// 1) La impresora pregunta si hay trabajo (status + capabilities)
+app.get("/cloudprnt", (req, res) => {
+  // Sólo para ver que la impresora pregunta:
+  console.log("📡 Printer called /cloudprnt (GET)");
+
+  // Si NO hay ticket guardado
   if (!lastTicket) {
     return res.json({
       jobReady: false,
-      deleteJob: false,
-      mediaTypes: ["escpos"]
+      mediaTypes: ["escpos"],
+      deleteJob: false
     });
   }
 
-  res.json({
+  // Si SÍ hay ticket guardado
+  return res.json({
     jobReady: true,
-    deleteJob: true,
-    mediaTypes: ["escpos"]
+    // le decimos que soportamos ESC/POS
+    mediaTypes: ["escpos"],
+    deleteJob: false
   });
 });
 
-// 2️⃣ Printer requests the job itself
-app.get("/CloudPRNT/Job", (req, res) => {
+// 2) La impresora viene por el trabajo (POST /cloudprnt)
+app.post("/cloudprnt", (req, res) => {
+  console.log("🖨 Printer called /cloudprnt (POST)");
+
   if (!lastTicket) {
-    return res.json({ jobReady: false });
+    // Nada que imprimir
+    return res.json({
+      jobReady: false,
+      mediaTypes: ["escpos"],
+      deleteJob: false
+    });
   }
 
   const ticketText = lastTicket;
 
+  // ===== CONVERTIR TICKET A ESC/POS SIMPLE =====
+  // Aquí estamos usando el texto tal cual, con saltos de línea y al final
+  // mandamos "cortar papel".
   const escpos =
     ticketText +
-    "\n-----------------------------\n" +
+    "\n------------------------------\n" +
     "Thank you!\n" +
-    "\x1B\x64\x03";
+    "\x1B\x64\x03"; // ESC d n -> feed & cut
 
   const job = {
     jobReady: true,
-    type: "escpos",
-    data: Buffer.from(escpos).toString("base64")
+    mediaTypes: ["escpos"],
+    deleteJob: true, // después de imprimir, que lo borre
+    // algunos modelos esperan 'job', otros 'data' directamente; este patrón
+    // funciona con la mayoría de CloudPRNT mC-Print3:
+    data: Buffer.from(escpos, "utf8").toString("base64"),
+    type: "escpos"
   };
 
-  lastTicket = null; // limpiar para que no imprima dos veces
+  // Limpiamos el ticket para que no se imprima dos veces
+  lastTicket = null;
 
-  res.json(job);
+  console.log("📦 Sending job to printer (escpos, base64).");
+
+  return res.json(job);
 });
 
-// Start server
+// ====== INICIAR SERVIDOR ======
 app.listen(PORT, () => {
-  console.log(`🚀 CloudPRNT server running on ${PORT}`);
+  console.log(`🚀 Aldos kiosco CloudPRNT server listening on port ${PORT}`);
 });
