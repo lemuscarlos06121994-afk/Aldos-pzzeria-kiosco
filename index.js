@@ -5,19 +5,18 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares
 app.use(cors());
 app.use(bodyParser.json());
 
-// Aquí guardamos el último ticket recibido del kiosco
+// Donde guardamos el ticket
 let lastTicket = null;
 
-// VERIFICAR QUE EL SERVIDOR ESTÁ VIVO
+// Página principal
 app.get("/", (req, res) => {
-  res.send("✅ Aldos Pizzeria CloudPRNT server is running.");
+  res.send("✅ Aldos CloudPRNT server is running.");
 });
 
-// EL KIOSCO ENVÍA SU TICKET AQUÍ
+// Recibe tickets del kiosco
 app.post("/submit", (req, res) => {
   const { ticket } = req.body || {};
 
@@ -26,60 +25,86 @@ app.post("/submit", (req, res) => {
   }
 
   lastTicket = ticket;
-
-  console.log("🧾 Nuevo ticket recibido:");
+  console.log("🧾 New ticket received:");
   console.log(ticket);
 
   res.json({ ok: true, message: "Ticket stored successfully." });
 });
 
-/* ============================================================
-   🌐 CLOUDPRNT PARA MCP30 (versión antigua)
-   La impresora consulta SOLO /cloudprnt y /cloudprnt/job
-   ============================================================*/
 
-// 1️⃣ La impresora pregunta el estado aquí:
-app.get("/cloudprnt", (req, res) => {
-  if (!lastTicket) {
-    return res.json({
-      jobReady: false,
-      message: "No job in queue"
-    });
-  }
+// ===============================
+// CLOUDPRNT v3 STATUS ENDPOINT
+// ===============================
+app.get("/cloudprnt/status", (req, res) => {
+  console.log("📡 Printer called /cloudprnt/status");
+
+  const jobExists = !!lastTicket;
+
+  res.set({
+    "Star-CloudPRNT-JobReady": jobExists ? "1" : "0",
+    "Star-CloudPRNT-MediaTypes": "escpos",
+    "Star-CloudPRNT-DeleteJob": "1"
+  });
 
   res.json({
-    jobReady: true,
-    mediaTypes: ["escpos"],  // necesario
-    deleteJob: true          // borrar ticket después
+    jobReady: jobExists,
+    mediaTypes: ["escpos"],
+    deleteJob: true
   });
 });
 
-// 2️⃣ La impresora pide el trabajo aquí:
+
+// ===============================
+// CLOUDPRNT v3 JOB ENDPOINT
+// ===============================
 app.get("/cloudprnt/job", (req, res) => {
+  console.log("📡 Printer called /cloudprnt/job");
+
   if (!lastTicket) {
     return res.json({
       jobReady: false
     });
   }
 
+  const ticketText = lastTicket;
+
+  // Convertir ticket a ESC/POS
   const escpos =
-    lastTicket +
+    ticketText +
     "\n-----------------------------\n" +
-    "Gracias por su compra!\n" +
+    "Gracias!\n" +
     "\x1B\x64\x03"; // cortar papel
 
-  const job = {
+  const base64 = Buffer.from(escpos).toString("base64");
+
+  // Headers obligatorios Star CloudPRNT
+  res.set({
+    "Content-Type": "application/json",
+    "Star-CloudPRNT-JobReady": "1",
+    "Star-CloudPRNT-DeleteJob": "1",
+    "Star-CloudPRNT-MediaTypes": "escpos"
+  });
+
+  // ENTREGAMOS EL TICKET
+  const response = {
     jobReady: true,
-    job: Buffer.from(escpos).toString("base64")
+    job: {
+      type: "escpos",
+      data: base64
+    }
   };
 
-  // limpiar ticket después de entregarlo
+  console.log("📨 Sending job to printer...");
+  console.log(response);
+
+  // BORRAR ticket después de entregarlo
   lastTicket = null;
 
-  res.json(job);
+  res.json(response);
 });
 
-// INICIAR SERVIDOR
+
+// Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 CloudPRNT server running on port ${PORT}`);
+  console.log(`🚀 Aldos CloudPRNT server running on port ${PORT}`);
 });
